@@ -246,7 +246,7 @@
       <div class="steps"><div class="step done"></div><div class="step done"></div><div class="step active"></div><div class="step"></div></div>
       <div class="eyebrow">Schritt 3 von 4</div>
       <h1 class="title">Private Playlist eingeben</h1>
-      <p class="sub">Füge den Link zu einer nicht-öffentlichen Spotify-Playlist ein (maximal 100 Songs! Wenn die Liste mehr Titel enthält, werden nur die ersten 100 Titel verwendet).<br> Die Songs werden danach in zufälliger Reihenfolge gespielt.</p>
+      <p class="sub">Füge den Link zu einer nicht-öffentlichen Spotify-Playlist ein, die deinem Account gehört. Öffentliche oder geteilte Playlisten werden nicht unterstützt.<br><br> Die Songs werden danach in zufälliger Reihenfolge gespielt.</p>
       <div class="error-box" id="playlistError"></div>
       <div class="field-group">
         <label class="field-label">Playlist-URL</label>
@@ -352,7 +352,7 @@
   </section>
 
   <p class="foot-note" id="globalFootNote" style="display:none;">
-    Hinweis: Wiedergabe im Browser erfordert ein Spotify-Premium-Konto. Bei Free-Konten zeigt Spotify einen Fehler statt Audio.
+    Hinweis: Erfordert ein Spotify-Premium-Konto und einen Developer API Key. Bei Free-Konten zeigt Spotify einen Fehler statt Audio.
   </p>
 
   <!-- Bestätigungs-Modal: Spiel vorzeitig beenden -->
@@ -584,7 +584,7 @@ async function initPlayerAndPlay(){
     state.player.addListener('initialization_error', ({ message }) => showError('playlistError','SDK-Init fehlgeschlagen: '+message));
     state.player.addListener('authentication_error', ({ message }) => showError('playlistError','Authentifizierung fehlgeschlagen: '+message));
     state.player.addListener('account_error', ({ message }) => showError('playlistError','Wiedergabe benötigt Spotify Premium. ('+message+')'));
-        state.player.addListener('player_state_changed', s => {
+    state.player.addListener('player_state_changed', s => {
       if(!s) return;
       state.isPlaying = !s.paused;
       state.trackPosition = s.position;
@@ -623,6 +623,7 @@ async function playCurrentTrack(){
    Das player_state_changed-Event feuert nur bei Zustandswechseln, daher zählen
    wir lokal hoch und gleichen periodisch mit getCurrentState() ab. */
 function startRealProgressTicker(){
+  if(state.demoMode) return;   // im Demo-Modus niemals den SDK-Ticker starten
   if(state.realProgressInterval) clearInterval(state.realProgressInterval);
   let ticks = 0;
   state.realProgressInterval = setInterval(async () => {
@@ -730,10 +731,16 @@ function startDemoTrack(){
   updateTrackPositionLabel();
   state.isPlaying = true;
   updatePlayPauseButton();
-    if(state.realProgressInterval) clearInterval(state.realProgressInterval);
+
+  // Beide Timer sauber stoppen, damit sich Demo- und SDK-Ticker nicht in die Quere kommen
+  if(state.progressInterval) clearInterval(state.progressInterval);
+  if(state.realProgressInterval) clearInterval(state.realProgressInterval);
+
   let elapsed = 0;
   const track = state.tracks[state.currentIndex];
   const duration = track.duration_ms;
+  updateProgress(0, duration);   // Balken sauber bei 0 starten
+
   state.progressInterval = setInterval(() => {
     if(!state.isPlaying) return;
     elapsed += 500;
