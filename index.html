@@ -379,7 +379,11 @@ let state = {
   clientId: localStorage.getItem('bt_client_id') || '',
   accessToken: null, tokenExpiry: null, deviceId: null, player: null,
   tracks: [], currentIndex: 0, revealed: false, isPlaying: false,
-  demoMode: false, progressInterval: null,
+  demoMode: false, 
+  progressInterval: null,
+  realProgressInterval: null,   // Ticker für echte Wiedergabe (SDK)
+  trackPosition: 0,             // zuletzt bekannte Position (ms)
+  trackDuration: 0,             // Songlänge (ms)
   teamCount: 2, teams: [], gameOver: false,
   mode: '1',              // '1' oder '2'
   activeOrder: [],        // Team-Indizes, die gerade dran sind
@@ -580,11 +584,14 @@ async function initPlayerAndPlay(){
     state.player.addListener('initialization_error', ({ message }) => showError('playlistError','SDK-Init fehlgeschlagen: '+message));
     state.player.addListener('authentication_error', ({ message }) => showError('playlistError','Authentifizierung fehlgeschlagen: '+message));
     state.player.addListener('account_error', ({ message }) => showError('playlistError','Wiedergabe benötigt Spotify Premium. ('+message+')'));
-    state.player.addListener('player_state_changed', s => {
+        state.player.addListener('player_state_changed', s => {
       if(!s) return;
       state.isPlaying = !s.paused;
+      state.trackPosition = s.position;
+      state.trackDuration = s.duration;
       updatePlayPauseButton();
       updateProgress(s.position, s.duration);
+      startRealProgressTicker();
     });
     await state.player.connect();
   } else {
@@ -612,12 +619,41 @@ async function playCurrentTrack(){
     document.getElementById('eqBars').classList.add('animate');
   }catch(err){ showError('playlistError', err.message); }
 }
+/* Lässt den Fortschrittsbalken bei echter Wiedergabe (SDK) flüssig weiterlaufen.
+   Das player_state_changed-Event feuert nur bei Zustandswechseln, daher zählen
+   wir lokal hoch und gleichen periodisch mit getCurrentState() ab. */
+function startRealProgressTicker(){
+  if(state.realProgressInterval) clearInterval(state.realProgressInterval);
+  let ticks = 0;
+  state.realProgressInterval = setInterval(async () => {
+    if(state.gameOver){ clearInterval(state.realProgressInterval); return; }
+    if(!state.isPlaying) return;
 
+    // lokal hochzählen
+    state.trackPosition = Math.min(state.trackPosition + 500, state.trackDuration);
+    updateProgress(state.trackPosition, state.trackDuration);
+
+    // ca. alle 5 Sekunden mit dem echten Stand synchronisieren (gegen Drift)
+    ticks++;
+    if(ticks % 10 === 0 && state.player){
+      try{
+        const cur = await state.player.getCurrentState();
+        if(cur){
+          state.trackPosition = cur.position;
+          state.trackDuration = cur.duration;
+          state.isPlaying = !cur.paused;
+          updateProgress(cur.position, cur.duration);
+        }
+      }catch(e){ /* still ignorieren */ }
+    }
+  }, 500);
+}
 function updateProgress(position, duration){
   const pct = duration ? (position/duration)*100 : 0;
   document.getElementById('progressFill').style.width = pct + '%';
   document.getElementById('trackTimer').textContent = formatTime(position);
 }
+
 function formatTime(ms){
   const t=Math.floor(ms/1000); const m=Math.floor(t/60); const s=t%60;
   return m+':'+s.toString().padStart(2,'0');
@@ -694,7 +730,7 @@ function startDemoTrack(){
   updateTrackPositionLabel();
   state.isPlaying = true;
   updatePlayPauseButton();
-  if(state.progressInterval) clearInterval(state.progressInterval);
+    if(state.realProgressInterval) clearInterval(state.realProgressInterval);
   let elapsed = 0;
   const track = state.tracks[state.currentIndex];
   const duration = track.duration_ms;
