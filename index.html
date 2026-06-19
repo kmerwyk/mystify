@@ -278,6 +278,18 @@
         </div>
       </div>
 
+      <label class="field-label">Startjahr</label>
+      <div class="mode-options" id="startOptions">
+        <div class="mode-option selected" data-start="0">
+          <div class="mo-title"><span class="mode-radio"></span>Ohne Startjahr</div>
+          <div class="mo-desc">Alle Teams beginnen ohne Start-Jahreszahl.</div>
+        </div>
+        <div class="mode-option" data-start="1">
+          <div class="mo-title"><span class="mode-radio"></span>Mit zufälligem Startjahr</div>
+          <div class="mo-desc">Jedes Team erhält zu Beginn ein zufälliges Erscheinungsjahr aus der Playlist als Startjahr.</div>
+        </div>
+      </div>
+
       <label class="field-label" style="text-align:center; display:block;">Anzahl Teams</label>
       <div class="team-count-row">
         <button class="count-btn" id="teamCountMinus">−</button>
@@ -386,6 +398,7 @@ let state = {
   trackDuration: 0,             // Songlänge (ms)
   teamCount: 2, teams: [], gameOver: false,
   mode: '1',              // '1' oder '2'
+  randomStart: false,     // true = jedes Team bekommt ein zufälliges Startjahr
   activeOrder: [],        // Team-Indizes, die gerade dran sind
   turnPointer: 0,         // Zeiger in activeOrder (Modus 2)
   playoff: null,          // Array von Team-IDs in Verlängerung
@@ -505,6 +518,14 @@ async function apiFetch(endpoint, options={}){
     ...options,
     headers:{ 'Authorization':'Bearer '+state.accessToken, 'Content-Type':'application/json', ...(options.headers||{}) },
   });
+}
+/* Zieht ein zufälliges Erscheinungsjahr aus der aktuellen Playlist */
+function pickRandomYearFromPlaylist(){
+  const years = state.tracks
+    .map(t => parseInt(t.year, 10))
+    .filter(y => !isNaN(y));
+  if(years.length === 0) return null;
+  return years[Math.floor(Math.random() * years.length)];
 }
 function shuffleArray(arr){
   const a=[...arr];
@@ -783,22 +804,44 @@ document.getElementById('teamCountPlus').addEventListener('click', () => {
   if(state.teamCount < 8){ state.teamCount++; renderTeamNameInputs(); }
 });
 
-document.querySelectorAll('.mode-option').forEach(opt => {
+// Modus-Auswahl (nur innerhalb von #modeOptions)
+document.querySelectorAll('#modeOptions .mode-option').forEach(opt => {
   opt.addEventListener('click', () => {
-    document.querySelectorAll('.mode-option').forEach(o => o.classList.remove('selected'));
+    document.querySelectorAll('#modeOptions .mode-option').forEach(o => o.classList.remove('selected'));
     opt.classList.add('selected');
     state.mode = opt.dataset.mode;
   });
 });
 
+// Startpunkte-Auswahl (nur innerhalb von #startOptions)
+document.querySelectorAll('#startOptions .mode-option').forEach(opt => {
+  opt.addEventListener('click', () => {
+    document.querySelectorAll('#startOptions .mode-option').forEach(o => o.classList.remove('selected'));
+    opt.classList.add('selected');
+    state.randomStart = (opt.dataset.start === '1');
+  });
+});
+
 document.getElementById('startGameBtn').addEventListener('click', async () => {
   const inputs = document.querySelectorAll('.team-name-input');
-  state.teams = Array.from(inputs).map((input, i) => ({
+    state.teams = Array.from(inputs).map((input, i) => ({
     id: i,
     name: input.value.trim() || ('Team '+(i+1)),
     color: TEAM_COLORS[i % TEAM_COLORS.length],
     years: [],          // [{year, songId}]
   }));
+
+  // Optional: jedem Team ein zufälliges Startjahr aus der Playlist schenken
+  if(state.randomStart){
+    state.teams.forEach(team => {
+      const startYear = pickRandomYearFromPlaylist();
+      if(startYear !== null){
+        // synthetische songId, damit kein echter Song blockiert wird
+        team.years.push({ year: startYear, songId: 'start-' + team.id });
+      }
+    });
+  }
+
   state.gameOver = false;
   state.playoff = null;
   state.activeOrder = state.teams.map(t => t.id);
