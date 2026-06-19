@@ -264,17 +264,17 @@
       <div class="steps"><div class="step done"></div><div class="step done"></div><div class="step done"></div><div class="step active"></div></div>
       <div class="eyebrow">Schritt 4 von 4</div>
       <h1 class="title">Teams &amp; Modus</h1>
-      <p class="sub">Wie viele Teams spielen mit? Wer als erstes <b style="color:var(--cream-dim)">10 Jahreszahlen</b> gesammelt hat, gewinnt.</p>
+            <p class="sub">Wie viele Teams spielen mit und wie viele Jahreszahlen führen zum Sieg? Wer die Siegpunktzahl als Erstes erreicht, gewinnt.</p>
 
       <label class="field-label">Spielmodus</label>
       <div class="mode-options" id="modeOptions">
         <div class="mode-option selected" data-mode="1">
           <div class="mo-title"><span class="mode-radio"></span>Modus 1 — Alle gleichzeitig</div>
-          <div class="mo-desc">Alle Teams raten gleichzeitig. Der Erste mit 10 Punkten gewinnt sofort.</div>
+          <div class="mo-desc">Alle Teams raten gleichzeitig. Der Erste mit ${state.winScore} Punkten gewinnt sofort.</div>
         </div>
         <div class="mode-option" data-mode="2">
           <div class="mo-title"><span class="mode-radio"></span>Modus 2 — Reihum</div>
-          <div class="mo-desc">Teams raten nacheinander. Nach jeder Auflösung wechselt das aktive Team. Bei Gleichstand auf 10 gibt es eine Verlängerung.</div>
+          <div class="mo-desc">Teams raten nacheinander. Nach jeder Auflösung wechselt das aktive Team. Wer am Ende der Runde ${state.winScore} Punkte hat, gewinnt. Bei Gleichstand gibt es eine Verlängerung.</div>
         </div>
       </div>
 
@@ -295,6 +295,13 @@
         <button class="count-btn" id="teamCountMinus">−</button>
         <div class="count-display" id="teamCountDisplay">2</div>
         <button class="count-btn" id="teamCountPlus">+</button>
+      </div>
+
+      <label class="field-label" style="text-align:center; display:block;">Siegpunkte (zu erreichende Jahreszahlen)</label>
+      <div class="team-count-row">
+        <button class="count-btn" id="winScoreMinus">−</button>
+        <div class="count-display" id="winScoreDisplay">10</div>
+        <button class="count-btn" id="winScorePlus">+</button>
       </div>
 
       <div class="team-name-inputs" id="teamNameInputs"></div>
@@ -385,7 +392,7 @@ document.getElementById('redirectUriHint').textContent = REDIRECT_URI;
 
 const SCOPES = ['streaming','user-read-email','user-read-private','user-modify-playback-state','user-read-playback-state'].join(' ');
 const TEAM_COLORS = ['#1DB954','#FF4747','#4FA8FF','#FFC247','#C77DFF','#FF7DB0','#5EEAD4','#FFA94D'];
-const WIN_SCORE = 10;
+// WIN_SCORE ist jetzt variabel: state.winScore (Standard 10)
 
 let state = {
   clientId: localStorage.getItem('bt_client_id') || '',
@@ -397,6 +404,7 @@ let state = {
   trackPosition: 0,             // zuletzt bekannte Position (ms)
   trackDuration: 0,             // Songlänge (ms)
   teamCount: 2, teams: [], gameOver: false,
+  winScore: 10,           // variable Siegpunktzahl (Standard 10)
   mode: '1',              // '1' oder '2'
   randomStart: false,     // true = jedes Team bekommt ein zufälliges Startjahr
   activeOrder: [],        // Team-Indizes, die gerade dran sind
@@ -783,6 +791,7 @@ function enterDemoMode(){
 /* ===== TEAM SETUP ===== */
 function renderTeamNameInputs(){
   document.getElementById('teamCountDisplay').textContent = state.teamCount;
+  document.getElementById('winScoreDisplay').textContent = state.winScore;
   const wrap = document.getElementById('teamNameInputs');
   wrap.innerHTML = '';
   for(let i=0;i<state.teamCount;i++){
@@ -802,6 +811,13 @@ document.getElementById('teamCountMinus').addEventListener('click', () => {
 });
 document.getElementById('teamCountPlus').addEventListener('click', () => {
   if(state.teamCount < 8){ state.teamCount++; renderTeamNameInputs(); }
+});
+
+document.getElementById('winScoreMinus').addEventListener('click', () => {
+  if(state.winScore > 1){ state.winScore--; document.getElementById('winScoreDisplay').textContent = state.winScore; }
+});
+document.getElementById('winScorePlus').addEventListener('click', () => {
+  if(state.winScore < 30){ state.winScore++; document.getElementById('winScoreDisplay').textContent = state.winScore; }
 });
 
 // Modus-Auswahl (nur innerhalb von #modeOptions)
@@ -884,7 +900,7 @@ function renderTeamsPanel(){
           ${escapeHtml(team.name)}
           <span class="turn-badge" id="turn-badge-${team.id}" style="display:none;">dran</span>
         </div>
-        <div class="team-score" id="team-score-${team.id}"><b>${team.years.length}</b> / ${WIN_SCORE}</div>
+                <div class="team-score" id="team-score-${team.id}"><b>${team.years.length}</b> / ${state.winScore}</div>
       </div>
       <div class="year-tiles" id="team-tiles-${team.id}">${renderYearTiles(team)}</div>
       <button class="btn-score" id="team-score-btn-${team.id}" data-team="${team.id}">Punkt gemacht</button>
@@ -911,7 +927,7 @@ function refreshTeamCard(teamId){
   const team = state.teams.find(t => t.id === teamId);
   if(!team) return;
   document.getElementById('team-tiles-' + teamId).innerHTML = renderYearTiles(team);
-  document.getElementById('team-score-' + teamId).innerHTML = `<b>${team.years.length}</b> / ${WIN_SCORE}`;
+    document.getElementById('team-score-' + teamId).innerHTML = `<b>${team.years.length}</b> / ${state.winScore}`;
   // Klick-Listener für neue Kacheln erneut binden
   document.querySelectorAll('#team-tiles-' + teamId + ' .year-tile').forEach(tile => {
     tile.addEventListener('click', () => removePoint(parseInt(tile.dataset.team,10), tile.dataset.songid));
@@ -1004,7 +1020,7 @@ function evaluateRoundEnd(){
     ? state.teams.filter(t => state.playoff.includes(t.id))
     : state.teams;
 
-  const reached = pool.filter(t => t.years.length >= WIN_SCORE);
+  const reached = pool.filter(t => t.years.length >= state.winScore);
   if(reached.length === 0) return; // niemand bei 10 -> normal weiter
 
   // höchste Punktzahl unter den 10+-Teams bestimmen
@@ -1031,7 +1047,7 @@ function evaluateRoundEndMode1(){
     ? state.teams.filter(t => state.playoff.includes(t.id))
     : state.teams;
 
-  const reached = pool.filter(t => t.years.length >= WIN_SCORE);
+  const reached = pool.filter(t => t.years.length >= state.winScore);
   if(reached.length === 0) return;   // niemand bei 10 -> normal weiter
 
   const maxScore = Math.max(...reached.map(t => t.years.length));
